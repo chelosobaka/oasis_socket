@@ -52,9 +52,9 @@ module ServerConfigMethods
     false
   end
 
-  def find_client(uuid)
+  def find_client(email)
     config = server_config
-    if config.dig('inbounds', 1, 'settings', 'clients')&.any? { |client| client['id'] == uuid }
+    if config.dig('inbounds', 1, 'settings', 'clients')&.any? { |client| client['email'] == email }
       true
     else
       false

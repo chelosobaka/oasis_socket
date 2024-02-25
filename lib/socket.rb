@@ -30,8 +30,8 @@ class OasisTCPSocket
       _, email = request.split(' ', 2)
       response = remove_client(email) ? 'true' : 'false'
     when /^find_client (.+)/
-      _, uuid = request.split(' ', 2)
-      response = find_client(uuid) ? 'true' : 'false'
+      _, email = request.split(' ', 2)
+      response = find_client(email) ? 'true' : 'false'
     when 'server_values'
       response = server_values.to_json
     when 'reload_config'
