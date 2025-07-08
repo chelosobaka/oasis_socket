@@ -64,7 +64,10 @@ module Xray
                 )
               )
       err ? false : true
-    rescue
+    rescue GRPC::Unknown => e
+      return true if e.message.include?("User #{email} not found")  
+      false
+    rescue StandardError => e
       false
     end
   end
