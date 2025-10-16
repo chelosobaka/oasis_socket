@@ -68,7 +68,7 @@ module ServerConfigMethods
 
     port = config.dig('inbounds', 1, 'port')
     security = config.dig('inbounds', 1, 'streamSettings', 'security')
-    sni = config.dig('inbounds', 1, 'streamSettings', 'realitySettings', 'dest')&.split(':')&.first
+    sni = config.dig('inbounds', 1, 'streamSettings', 'realitySettings', 'serverNames')&.first
     fp = config.dig('inbounds', 1, 'streamSettings', 'realitySettings', 'settings', 'fingerprint')
     pbk = config.dig('inbounds', 1, 'streamSettings', 'realitySettings', 'settings', 'publicKey')
     sid = config.dig('inbounds', 1, 'streamSettings', 'realitySettings', 'shortIds', 0)
