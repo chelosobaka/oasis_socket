@@ -33,9 +33,9 @@ module ServerConfigMethods
 
   def get_inbound_number(type)
     {
-      'reality' => 1,
-      'grpc'    => 2,
-      'xhttp'   => 3
+      'Reality' => 1,
+      'Grpc'    => 2,
+      'Xhttp'   => 3
     }[type]
   end
 
