@@ -3,87 +3,133 @@ require 'open3'
 require_relative 'xray_api'
 
 module ServerConfigMethods
-  def path
-    '/usr/local/etc/xray/config.json'
+  PATH = '/usr/local/etc/xray/config.json'
+
+  def clients(config, inbound_number)
+    config.dig('inbounds', inbound_number, 'settings', 'clients')
+  end
+
+  def xray_api
+    @xray_api ||= Xray::XrayAPI.new
+  end
+
+  def config_mutex
+    @config_mutex ||= Mutex.new
   end
 
   def file_exist?
-    File.exist?(path)
-  rescue
-    false
+     { ok: true, data: File.exist?(PATH) }
+  rescue => e
+    { ok: false, error: e.message }
   end
 
   def server_config
-    raw_data = File.read(path)
-    JSON.parse(raw_data)
+    raw_data = File.read(PATH)
+    data = JSON.parse(raw_data)
+    { ok: true, data: data }
   rescue => e
-    raise "Ошибка при обработке файла: #{e}"
+    { ok: false, error: "Ошибка при чтении файла: #{e}" }
   end
 
-  def file
-    raw_data = File.read(path)
-    JSON.parse(raw_data)
-  rescue
-    {}
+  def get_inbound_number(type)
+    {
+      'reality' => 1,
+      'grpc'    => 2,
+      'xhttp'   => 3
+    }[type]
   end
 
-  def add_client(new_client)
-    return false unless Xray::XrayAPI.new.add_user(new_client['email'], new_client['id'])
+  def add_client(new_client, type)
+    inbound_number = get_inbound_number(type)
+    raise "Inbound number not found" unless inbound_number
+    raise "Failed to add user to Xray" unless xray_api.add_user(new_client['email'], new_client['id'])
 
-    config = server_config
-    config.dig('inbounds', 1, 'settings', 'clients') << new_client
+    
+    config_response = server_config
+    raise config_response[:error] unless config_response[:ok]
+    config = config_response[:data]
+
+    clients(config, inbound_number) << new_client
 
     new_json_data = JSON.pretty_generate(config)
-    File.write(path, new_json_data)
-    true
-  rescue
-    false
-  end
-
-  def remove_client(email)
-    return false unless Xray::XrayAPI.new.remove_user(email)
-
-    config = server_config
-    config.dig('inbounds', 1, 'settings', 'clients')&.reject! { |client| client['email'] == email }
-    new_json_data = JSON.pretty_generate(config)
-    File.write(path, new_json_data)
-    true
-  rescue
-    false
-  end
-
-  def find_client(email)
-    config = server_config
-    if config.dig('inbounds', 1, 'settings', 'clients')&.any? { |client| client['email'] == email }
-      true
-    else
-      false
+    config_mutex.synchronize do
+      File.write(PATH, new_json_data)
     end
-  rescue
-    false
+    { ok: true, data: true }
+  rescue => e
+    { ok: false, error: e.message }
   end
 
-  def server_values
-    config = server_config
+  def remove_client(email, type)
+    inbound_number = get_inbound_number(type)
+    raise "Inbound number not found" unless inbound_number
+    raise "Failed to add user to Xray" unless xray_api.remove_user(email)
 
-    port = config.dig('inbounds', 1, 'port')
-    security = config.dig('inbounds', 1, 'streamSettings', 'security')
-    sni = config.dig('inbounds', 1, 'streamSettings', 'realitySettings', 'serverNames')&.first
-    fp = config.dig('inbounds', 1, 'streamSettings', 'realitySettings', 'settings', 'fingerprint')
-    pbk = config.dig('inbounds', 1, 'streamSettings', 'realitySettings', 'settings', 'publicKey')
-    sid = config.dig('inbounds', 1, 'streamSettings', 'realitySettings', 'shortIds', 0)
-    network_type = config.dig('inbounds', 1, 'streamSettings', 'network')
+    config_response = server_config
+    raise config_response[:error] unless config_response[:ok]
+    config = config_response[:data]
+
+    clients(config, inbound_number)&.reject! { |client| client['email'] == email }
+    new_json_data = JSON.pretty_generate(config)
+    config_mutex.synchronize do
+      File.write(PATH, new_json_data)
+    end
+    { ok: true, data: true }
+  rescue => e
+    { ok: false, error: e.message }
+  end
+
+  def find_client(email, type)
+    inbound_number = get_inbound_number(type)
+    raise "Inbound number not found" unless inbound_number
+
+    config_response = server_config
+    raise config_response[:error] unless config_response[:ok]
+    config = config_response[:data]
+
+    any_client? = !!clients(config, inbound_number)&.any? { |client| client['email'] == email }
+    { ok: true, data: any_client? }
+  rescue => e
+    { ok: false, error: e.message}
+  end
+
+  def server_values(type)
+    inbound_number = get_inbound_number(type)
+    raise "Inbound number not found" unless inbound_number
+
+    config_response = server_config
+    raise config_response[:error] unless config_response[:ok]
+    config = config_response[:data]
+
+    port = config.dig('inbounds', inbound_number, 'port')
+    security = config.dig('inbounds', inbound_number, 'streamSettings', 'security')
+    sni = config.dig('inbounds', inbound_number, 'streamSettings', 'realitySettings', 'serverNames')&.first
+    fp = config.dig('inbounds', inbound_number, 'streamSettings', 'realitySettings', 'settings', 'fingerprint')
+    pbk = config.dig('inbounds', inbound_number, 'streamSettings', 'realitySettings', 'settings', 'publicKey')
+    sid = config.dig('inbounds', inbound_number, 'streamSettings', 'realitySettings', 'shortIds', 0)
+    network_type = config.dig('inbounds', inbound_number, 'streamSettings', 'network')
     flow = 'xtls-rprx-vision'
 
-    { port: port, security: security, sni: sni, fp: fp, pbk: pbk, sid: sid, network_type: network_type, flow: flow }
-  rescue
-    {}
+    { ok: true,
+      data: {
+        port: port, 
+        security: security, 
+        sni: sni, 
+        fp: fp,
+        pbk: pbk, 
+        sid: sid, 
+        network_type: network_type, 
+        flow: flow 
+      }
+    }
+  rescue => e
+    { ok: false, error: e.message }
   end
 
   def reload_config
     _, _, status = Open3.capture3('systemctl restart xray')
-    status.success? ? true : false
+    { ok: true, data: status.success? }
   rescue
-    false
+    { ok: false, data: false }
   end
 end

@@ -24,7 +24,7 @@ module Xray
     end
 
     def add_user(email, uuid, inbound_tag = 'inbound-443')
-      account = new_accaunt(uuid)
+      account = new_account(uuid)
       client = @handler_service_client
 
       _, err = client.alter_inbound(
@@ -42,7 +42,7 @@ module Xray
       false
     end
 
-    def new_accaunt(uuid)
+    def new_account(uuid)
       to_typed_message(
         Xray::Proxy::Vless::Account.new(
           id: uuid,
