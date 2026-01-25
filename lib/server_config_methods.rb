@@ -87,8 +87,8 @@ module ServerConfigMethods
     raise config_response[:error] unless config_response[:ok]
     config = config_response[:data]
 
-    any_client? = !!clients(config, inbound_number)&.any? { |client| client['email'] == email }
-    { ok: true, data: any_client? }
+    any_client = !!clients(config, inbound_number)&.any? { |client| client['email'] == email }
+    { ok: true, data: any_client }
   rescue => e
     { ok: false, error: e.message}
   end
