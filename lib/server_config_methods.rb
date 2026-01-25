@@ -48,8 +48,11 @@ module ServerConfigMethods
     config_response = server_config
     raise config_response[:error] unless config_response[:ok]
     config = config_response[:data]
+    
+    inbound_clients = clients(config, inbound_number)
+    raise "Failed connect to inbound" unless inbound_clients
 
-    clients(config, inbound_number) << new_client
+    inbound_clients << new_client
 
     new_json_data = JSON.pretty_generate(config)
     config_mutex.synchronize do
@@ -69,7 +72,10 @@ module ServerConfigMethods
     raise config_response[:error] unless config_response[:ok]
     config = config_response[:data]
 
-    clients(config, inbound_number)&.reject! { |client| client['email'] == email }
+    inbound_clients = clients(config, inbound_number)
+    raise "Failed connect to inbound" unless inbound_clients
+
+    inbound_clients.reject! { |client| client['email'] == email }
     new_json_data = JSON.pretty_generate(config)
     config_mutex.synchronize do
       File.write(PATH, new_json_data)
@@ -87,7 +93,10 @@ module ServerConfigMethods
     raise config_response[:error] unless config_response[:ok]
     config = config_response[:data]
 
-    any_client = !!clients(config, inbound_number)&.any? { |client| client['email'] == email }
+    inbound_clients = clients(config, inbound_number)
+    raise "Failed connect to inbound" unless inbound_clients
+
+    any_client = inbound_clients.any? { |client| client['email'] == email }
     { ok: true, data: any_client }
   rescue => e
     { ok: false, error: e.message}
