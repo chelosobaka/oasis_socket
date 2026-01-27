@@ -51,7 +51,7 @@ module ServerConfigMethods
     inbound_number = get_inbound_number(type)
     inbound_tag = get_inbound_tag(type)
     raise "Inbound number not found" unless inbound_number
-    raise "Failed to add user to Xray" unless xray_api.add_user(new_client['email'], new_client['id'], inbound_tag: inbound_tag)
+    raise "Failed to add user to Xray" unless xray_api.add_user(new_client['email'], new_client['id'], inbound_tag)
 
     
     config_response = server_config
@@ -76,7 +76,7 @@ module ServerConfigMethods
     inbound_number = get_inbound_number(type)
     inbound_tag = get_inbound_tag(type)
     raise "Inbound number not found" unless inbound_number
-    raise "Failed to add user to Xray" unless xray_api.remove_user(email, inbound_tag: inbound_tag)
+    raise "Failed to add user to Xray" unless xray_api.remove_user(email, inbound_tag)
 
     config_response = server_config
     raise config_response[:error] unless config_response[:ok]
