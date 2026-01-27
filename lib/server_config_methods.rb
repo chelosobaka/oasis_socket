@@ -33,9 +33,9 @@ module ServerConfigMethods
 
   def available_types
     {
-      'Reality':  { inbound_number: 1, inbound_tag: 'inbound-443' },
-      'Grpc':     { inbound_number: 2, inbound_tag: 'inbound-gRPC' },
-      'Xhttp':    { inbound_number: 3, inbound_tag: 'inbound-xHTTP'}
+      'Reality' => { inbound_number: 1, inbound_tag: 'inbound-443' },
+      'Grpc' =>    { inbound_number: 2, inbound_tag: 'inbound-gRPC' },
+      'Xhttp' =>   { inbound_number: 3, inbound_tag: 'inbound-xHTTP'}
     }
   end
 
