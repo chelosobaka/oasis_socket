@@ -23,6 +23,8 @@ class OasisTCPSocket
     return if raw.nil?
 
     data = JSON.parse(raw)
+    
+    p data
 
     response =
       case data['action']
@@ -51,6 +53,7 @@ class OasisTCPSocket
         false
       end
 
+      p response 
     client.puts(response.to_json)
   rescue JSON::ParserError
     answer = { ok: false, error: 'Invalid_json' }
