@@ -18,7 +18,7 @@ module ServerConfigMethods
   end
 
   def file_exist?
-     { ok: true, data: File.exist?(PATH) }
+    { ok: true, data: File.exist?(PATH) }
   rescue => e
     { ok: false, error: e.message }
   end
@@ -34,8 +34,8 @@ module ServerConfigMethods
   def available_types
     {
       'Reality' => { inbound_number: 1, inbound_tag: 'inbound-443' },
-      'Grpc' =>    { inbound_number: 2, inbound_tag: 'inbound-1111' },
-      'Xhttp' =>   { inbound_number: 3, inbound_tag: 'inbound-2222'}
+      'Grpc'    => { inbound_number: 2, inbound_tag: 'inbound-1111' },
+      'Xhttp'   => { inbound_number: 3, inbound_tag: 'inbound-2222' }
     }
   end
 
@@ -53,20 +53,24 @@ module ServerConfigMethods
     raise "Inbound number not found" unless inbound_number
     raise "Failed to add user to Xray" unless xray_api.add_user(new_client['email'], new_client['id'], inbound_tag)
 
-    
     config_response = server_config
     raise config_response[:error] unless config_response[:ok]
     config = config_response[:data]
-    
+
     inbound_clients = clients(config, inbound_number)
     raise "Failed connect to inbound" unless inbound_clients
 
     inbound_clients << new_client
 
     new_json_data = JSON.pretty_generate(config)
-    config_mutex.synchronize do
-      File.write(PATH, new_json_data)
+    config_mutex.synchronize { File.write(PATH, new_json_data) }
+
+    # Для Xhttp пересоздаем inbound через gRPC
+    if type == 'Xhttp'
+      result = reload_xhttp_inbound_grpc(type)
+      raise result[:error] unless result[:ok]
     end
+
     { ok: true, data: true }
   rescue => e
     { ok: false, error: e.message }
@@ -76,7 +80,7 @@ module ServerConfigMethods
     inbound_number = get_inbound_number(type)
     inbound_tag = get_inbound_tag(type)
     raise "Inbound number not found" unless inbound_number
-    raise "Failed to add user to Xray" unless xray_api.remove_user(email, inbound_tag)
+    raise "Failed to remove user from Xray" unless xray_api.remove_user(email, inbound_tag)
 
     config_response = server_config
     raise config_response[:error] unless config_response[:ok]
@@ -86,10 +90,16 @@ module ServerConfigMethods
     raise "Failed connect to inbound" unless inbound_clients
 
     inbound_clients.reject! { |client| client['email'] == email }
+
     new_json_data = JSON.pretty_generate(config)
-    config_mutex.synchronize do
-      File.write(PATH, new_json_data)
+    config_mutex.synchronize { File.write(PATH, new_json_data) }
+
+    # Для Xhttp пересоздаем inbound через gRPC
+    if type == 'Xhttp'
+      result = reload_xhttp_inbound_grpc(type)
+      raise result[:error] unless result[:ok]
     end
+
     { ok: true, data: true }
   rescue => e
     { ok: false, error: e.message }
@@ -112,6 +122,28 @@ module ServerConfigMethods
     { ok: false, error: e.message}
   end
 
+  def reload_xhttp_inbound_grpc(type)
+    inbound_number = get_inbound_number(type)
+    raise "Inbound number not found" unless inbound_number
+    raise "Only Xhttp inbound supported" unless type == "Xhttp"
+
+    config_response = server_config
+    raise config_response[:error] unless config_response[:ok]
+    config = config_response[:data]
+
+    inbound_json = config['inbounds'][inbound_number]
+
+    success = xray_api.reload_inbound_xhttp_grpc(inbound_json)
+    raise "Failed to reload inbound via gRPC" unless success
+
+    { ok: true, data: true }
+  rescue => e
+    { ok: false, error: e.message }
+  end
+
+  # -----------------------------
+  # Остальные методы остаются без изменений
+  # -----------------------------
   def server_values(type)
     inbound_number = get_inbound_number(type)
     raise "Inbound number not found" unless inbound_number
