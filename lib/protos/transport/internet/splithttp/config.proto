@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package xray.transport.internet.xhttp;
+option csharp_namespace = "Xray.Transport.Internet.Xhttp";
+option go_package = "github.com/xtls/xray-core/transport/internet/xhttp";
+option java_package = "com.xray.transport.internet.xhttp";
+option java_outer_classname = "ConfigProto";
+
+message Config {
+  string path = 1;
+  string mode = 2;
+  string host = 3;
+}
