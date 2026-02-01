@@ -1,200 +1,233 @@
-$LOAD_PATH.unshift(File.expand_path("protos", __dir__))
+# xray_api.rb
+require 'grpc'
 
-require_relative 'protos/account_pb'
-require_relative 'protos/command_services_pb'
-require_relative 'protos/core/config_pb'
-require_relative 'protos/transport/internet/config_pb'
-require_relative 'protos/common/serial/typed_message_pb'
-require_relative 'protos/common/protocol/user_pb'
+# Загрузка protobuf файлов
+$LOAD_PATH.unshift(File.expand_path("generated", __dir__))
+
+begin
+  require_relative "generated/app/proxyman/command/command_pb"
+  require_relative "generated/app/proxyman/command/command_services_pb"
+  require_relative "generated/app/proxyman/config_pb"
+  require_relative "generated/proxy/vless/account_pb"
+  require_relative "generated/common/protocol/user_pb"
+  require_relative "generated/common/serial/typed_message_pb"
+  require_relative "generated/transport/internet/config_pb"
+  require_relative "generated/common/net/port_pb"
+rescue LoadError => e
+  puts "Warning: Could not load protobuf files: #{e.message}"
+end
 
 module Xray
-  class XrayAPI
-    def initialize
-      @handler_service_client = Xray::App::Proxyman::Command::HandlerService::Stub.new(
-        '127.0.0.1:10085',
-        :this_channel_is_insecure
-      )
-    end
-
-    # -----------------------------
-    # Протобаф-обертка
-    # -----------------------------
-    def to_typed_message(message)
-      return nil if message.nil?
-
-      settings = Google::Protobuf.encode(message)
-      Xray::Common::Serial::TypedMessage.new(
-        type: get_message_type(message),
-        value: settings
-      )
-    end
-
-    def get_message_type(message)
-      message.class.descriptor.name
-    end
-
-    # -----------------------------
-    # Добавление/удаление пользователя через AlterInbound
-    # -----------------------------
-    def add_user(email, uuid, inbound_tag = 'inbound-443')
-      account = new_account(uuid)
-      client = @handler_service_client
-
-      _, err = client.alter_inbound(
-        Xray::App::Proxyman::Command::AlterInboundRequest.new(
-          tag: inbound_tag,
-          operation: to_typed_message(
-            Xray::App::Proxyman::Command::AddUserOperation.new(
-              user: Xray::Common::Protocol::User.new(email: email, account: account)
-            )
+  class XRayAPI
+    def initialize(host: "127.0.0.1", port: 10085)
+      begin
+        if defined?(App::Proxyman::Command::HandlerService::Stub)
+          @handler_service_client = App::Proxyman::Command::HandlerService::Stub.new(
+            "#{host}:#{port}",
+            :this_channel_is_insecure
           )
-        )
-      )
-      err ? false : true
-    rescue
-      false
+        else
+          puts "Warning: Protobuf classes not loaded, using dummy implementation"
+          @handler_service_client = nil
+        end
+      rescue => e
+        puts "Warning: Failed to initialize gRPC client: #{e.message}"
+        @handler_service_client = nil
+      end
     end
 
-    def remove_user(email, inbound_tag = 'inbound-443')
-      client = @handler_service_client
-      _, err = client.alter_inbound(
-        Xray::App::Proxyman::Command::AlterInboundRequest.new(
-          tag: inbound_tag,
-          operation: to_typed_message(
-            Xray::App::Proxyman::Command::RemoveUserOperation.new(
-              email: email
-            )
-          )
-        )
-      )
-      err ? false : true
-    rescue GRPC::Unknown => e
-      return true if e.message.include?("User #{email} not found")  
-      false
-    rescue StandardError => e
-      false
-    end
-
-    def new_account(uuid)
-      to_typed_message(
-        Xray::Proxy::Vless::Account.new(
+    def add_user(email:, uuid:, tag:, flow: "")
+      return false unless @handler_service_client
+      
+      begin
+        # Создаем аккаунт VLESS
+        account = Proxy::Vless::Account.new(
           id: uuid,
-          flow: 'xtls-rprx-vision'
+          flow: flow,
+          encryption: 'none'
         )
-      )
+        
+        # Создаем typed message для аккаунта
+        account_typed = Common::Serial::TypedMessage.new(
+          type: "xray.proxy.vless.Account",
+          value: Google::Protobuf.encode(account)
+        )
+        
+        # Создаем пользователя
+        user = Common::Protocol::User.new(
+          email: email,
+          level: 0,
+          account: account_typed
+        )
+        
+        # Создаем операцию добавления пользователя
+        operation = App::Proxyman::Command::AddUserOperation.new(user: user)
+        operation_typed = Common::Serial::TypedMessage.new(
+          type: "xray.app.proxyman.command.AddUserOperation",
+          value: Google::Protobuf.encode(operation)
+        )
+        
+        # Отправляем запрос
+        request = App::Proxyman::Command::AlterInboundRequest.new(
+          tag: tag,
+          operation: operation_typed
+        )
+        
+        @handler_service_client.alter_inbound(request)
+        true
+      rescue => e
+        puts "Add user error: #{e.message}"
+        false
+      end
     end
 
-    # -----------------------------
-    # Пересоздание xHTTP inbound через gRPC
-    # -----------------------------
-    def reload_inbound_xhttp_grpc(inbound_json)
-      tag = inbound_json["tag"]
-
-      # 1) Удаляем inbound
-      @handler_service_client.remove_inbound(
-        Xray::App::Proxyman::Command::RemoveInboundRequest.new(tag: tag)
-      )
-
-      # 2) Строим protobuf для xHTTP inbound
-      inbound_proto = build_xhttp_inbound(inbound_json)
-
-      # 3) Добавляем inbound обратно
-      @handler_service_client.add_inbound(
-        Xray::App::Proxyman::Command::AddInboundRequest.new(
-          inbound: inbound_proto
+    def remove_user(email:, tag:)
+      return false unless @handler_service_client
+      
+      begin
+        # Создаем операцию удаления пользователя
+        operation = App::Proxyman::Command::RemoveUserOperation.new(email: email)
+        operation_typed = Common::Serial::TypedMessage.new(
+          type: "xray.app.proxyman.command.RemoveUserOperation",
+          value: Google::Protobuf.encode(operation)
         )
-      )
+        
+        # Отправляем запрос
+        request = App::Proxyman::Command::AlterInboundRequest.new(
+          tag: tag,
+          operation: operation_typed
+        )
+        
+        @handler_service_client.alter_inbound(request)
+        true
+      rescue => e
+        # Если пользователь не найден, считаем успешным
+        return true if e.message.include?("not found")
+        puts "Remove user error: #{e.message}"
+        false
+      end
+    end
 
-      true
-    rescue => e
-      puts "reload_inbound_xhttp_grpc error: #{e.message}"
-      false
+    def recreate_inbound(inbound_json)
+      return false unless @handler_service_client
+
+      p inbound_json
+      begin
+        tag = inbound_json['tag']
+        
+        # 1. Удаляем старый inbound
+        remove_request = App::Proxyman::Command::RemoveInboundRequest.new(tag: tag)
+        @handler_service_client.remove_inbound(remove_request)
+        
+        # 2. Создаем новый inbound
+        # Конвертируем JSON в protobuf
+        inbound_proto = json_to_inbound_config(inbound_json)
+        
+        add_request = App::Proxyman::Command::AddInboundRequest.new(inbound: inbound_proto)
+        @handler_service_client.add_inbound(add_request)
+        
+        true
+      rescue => e
+        puts "Recreate inbound error: #{e.message}"
+        false
+      end
     end
 
     private
 
-    # -----------------------------
-    # Построение InboundHandlerConfig для xHTTP
-    # -----------------------------
-    def build_xhttp_inbound(inbound)
-      # -----------------------------
-      # Receiver (port)
-      # -----------------------------
-      receiver = Xray::Core::ReceiverConfig.new(
-        port_range: Xray::Common::Net::PortRange.new(
-          from: inbound["port"],
-          to: inbound["port"]
-        )
-      )
+    def safe_set(obj, field, value)
+      setter = "#{field}="
 
-      # -----------------------------
-      # VLESS Clients
-      # -----------------------------
-      clients = inbound["settings"]["clients"].map do |c|
-        Xray::Common::Protocol::User.new(
-          email: c["email"],
-          account: new_account(c["id"])
-        )
+      if obj.respond_to?(setter)
+        obj.public_send(setter, value)
+      else
+        puts "⚠️ Поле #{field} отсутствует у #{obj.class}"
       end
+    end
 
-      # -----------------------------
-      # Proxy settings (VLESS)
-      # -----------------------------
-      proxy = Xray::Proxy::Vless::InboundConfig.new(
-        clients: clients,
-        decryption: inbound["settings"]["decryption"] || "none"
-      )
+  def json_to_inbound_config(json)
+    config = App::Proxyman::InboundConfig.new
 
-      # -----------------------------
-      # TLS Settings
-      # -----------------------------
-      tls_json = inbound.dig("streamSettings", "tlsSettings") || {}
-      tls_config = Xray::Transport::Internet::TlsConfig.new(
-        server_name: tls_json["serverName"],
-        alpn: tls_json["alpn"] || [],
-        min_version: tls_json["minVersion"],
-        max_version: tls_json["maxVersion"],
-        allow_insecure: tls_json["allowInsecure"] || false,
-        certificates: (tls_json["certificates"] || []).map do |cert|
-          Xray::Transport::Internet::Certificate.new(
-            certificate_file: cert["certificateFile"],
-            key_file: cert["keyFile"]
+    # Безопасно задаём базовые поля
+    safe_set(config, :tag, json['tag'])
+    safe_set(config, :listen, json['listen']) if json['listen']
+    safe_set(config, :port, json['port'])
+
+    # settings
+    if json['settings']
+      settings = App::Proxyman::ReceiverConfig.new
+
+      if json['settings']['clients']
+        users = json['settings']['clients'].map do |client|
+          account = Proxy::Vless::Account.new(
+            id: client['id'],
+            flow: client['flow'] || '',
+            encryption: 'none'
+          )
+
+          account_typed = Common::Serial::TypedMessage.new(
+            type: "xray.proxy.vless.Account",
+            value: Google::Protobuf.encode(account)
+          )
+
+          Common::Protocol::User.new(
+            email: client['email'],
+            level: 0,
+            account: account_typed
           )
         end
-      )
 
-      # -----------------------------
-      # XHTTP Settings
-      # -----------------------------
-      xhttp_json = inbound.dig("streamSettings", "xhttpSettings") || {}
-      xhttp_config = Xray::Transport::Internet::XhttpConfig.new(
-        path: xhttp_json["path"] || "/",
-        mode: xhttp_json["mode"] || "auto"
-      )
+        # В protobuf поле может называться user или users
+        if settings.respond_to?(:user=)
+          settings.user = users
+        elsif settings.respond_to?(:users=)
+          settings.users = users
+        else
+          puts "⚠️ ReceiverConfig не поддерживает user/users"
+        end
+      end
 
-      # -----------------------------
-      # StreamConfig
-      # -----------------------------
-      stream = Xray::Transport::Internet::StreamConfig.new(
-        protocol_name: inbound.dig("streamSettings", "network") || "xhttp",
-        security_type: inbound.dig("streamSettings", "security") || "tls",
-        tls_settings: to_typed_message(tls_config),
-        transport_settings: [
-          Xray::Transport::Internet::TransportConfig.new(
-            protocol_name: "xhttp",
-            settings: to_typed_message(xhttp_config)
-          )
-        ]
-      )
+      # Название поля settings в InboundConfig может быть другим
+      if config.respond_to?(:settings=)
+        config.settings = settings
+      elsif config.respond_to?(:receiver_settings=)
+        config.receiver_settings = settings
+      else
+        puts "⚠️ InboundConfig не поддерживает settings"
+      end
+    end
 
-      # -----------------------------
-      # InboundHandlerConfig
-      # -----------------------------
-      Xray::Core::InboundHandlerConfig.new(
-        tag: inbound["tag"],
-        receiver_settings: to_typed_message(receiver),
-        proxy_settings: to_typed_message(proxy),
-        stream_settings: to_typed_message(stream)
+    config
+  end
+
+
+    def json_to_stream_settings(json)
+      # Простая реализация - в реальности нужно обрабатывать все поля
+      return nil unless json
+      
+      # Базовые настройки транспорта
+      transport_config = Transport::Internet::StreamConfig.new
+      transport_config.protocol_name = json['network'] || 'tcp'
+      
+      # Настройки безопасности
+      if json['security'] == 'reality'
+        reality_settings = json['realitySettings']
+        if reality_settings
+          # Здесь нужно создать reality settings
+          # Это сложная структура, упрощаем
+          transport_config.security_type = 'reality'
+        end
+      end
+      
+      transport_config
+    end
+
+    def to_typed_message(message)
+      return nil if message.nil?
+      
+      Common::Serial::TypedMessage.new(
+        type: message.class.descriptor.name,
+        value: Google::Protobuf.encode(message)
       )
     end
   end

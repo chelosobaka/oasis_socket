@@ -53,7 +53,7 @@ class OasisTCPSocket
         false
       end
 
-      p response 
+      p response.inspect 
     client.puts(response.to_json)
   rescue JSON::ParserError
     answer = { ok: false, error: 'Invalid_json' }
