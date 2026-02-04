@@ -33,9 +33,9 @@ module ServerConfigMethods
 
   def available_types
     {
-      'Reality':  { inbound_number: 1, inbound_tag: 'inbound-443' },
-      'Grpc':     { inbound_number: 2, inbound_tag: 'inbound-gRPC' },
-      'Xhttp':    { inbound_number: 3, inbound_tag: 'inbound-xHTTP'}
+      'Reality' => { inbound_number: 1, inbound_tag: 'inbound-443' },
+      'Grpc' => { inbound_number: 2, inbound_tag: 'INBOUND' },
+      'Xhttp' => { inbound_number: 3, inbound_tag: 'INBOUND2'}
     }
   end
 
@@ -51,9 +51,8 @@ module ServerConfigMethods
     inbound_number = get_inbound_number(type)
     inbound_tag = get_inbound_tag(type)
     raise "Inbound number not found" unless inbound_number
-    raise "Failed to add user to Xray" unless xray_api.add_user(new_client['email'], new_client['id'], inbound_tag: inbound_tag)
+    raise "Failed to add user to Xray" unless xray_api.add_user(new_client['email'], new_client['id'], new_client['flow'], inbound_tag)
 
-    
     config_response = server_config
     raise config_response[:error] unless config_response[:ok]
     config = config_response[:data]
@@ -76,7 +75,7 @@ module ServerConfigMethods
     inbound_number = get_inbound_number(type)
     inbound_tag = get_inbound_tag(type)
     raise "Inbound number not found" unless inbound_number
-    raise "Failed to add user to Xray" unless xray_api.remove_user(email, inbound_tag: inbound_tag)
+    raise "Failed to add user to Xray" unless xray_api.remove_user(email, inbound_tag)
 
     config_response = server_config
     raise config_response[:error] unless config_response[:ok]

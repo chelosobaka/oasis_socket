@@ -1,5 +1,20 @@
-require_relative 'protos/account_pb'
-require_relative 'protos/command_services_pb'
+# xray_api.rb
+require 'grpc'
+
+$LOAD_PATH.unshift(File.expand_path("generated", __dir__))
+
+begin
+  require_relative "generated/app/proxyman/command/command_pb"
+  require_relative "generated/app/proxyman/command/command_services_pb"
+  require_relative "generated/app/proxyman/config_pb"
+  require_relative "generated/proxy/vless/account_pb"
+  require_relative "generated/common/protocol/user_pb"
+  require_relative "generated/common/serial/typed_message_pb"
+  require_relative "generated/transport/internet/config_pb"
+  require_relative "generated/common/net/port_pb"
+rescue LoadError => e
+  puts "Warning: Could not load protobuf files: #{e.message}"
+end
 
 # grpc_tools_ruby_protoc -I./ -I./ --ruby_out=./ --grpc_out=./ ./command.proto
 module Xray
@@ -23,8 +38,8 @@ module Xray
       message.class.descriptor.name
     end
 
-    def add_user(email, uuid, inbound_tag = 'inbound-443')
-      account = new_account(uuid)
+    def add_user(email, uuid, flow, inbound_tag = 'inbound-443')
+      account = new_account(uuid, flow)
       client = @handler_service_client
 
       _, err = client.alter_inbound(
