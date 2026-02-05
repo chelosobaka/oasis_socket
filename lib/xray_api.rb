@@ -53,15 +53,15 @@ module Xray
                 )
               )
       err ? false : true
-    rescue
+    rescue => e
       false
     end
 
-    def new_account(uuid)
+    def new_account(uuid, flow)
       to_typed_message(
         Xray::Proxy::Vless::Account.new(
           id: uuid,
-          flow: 'xtls-rprx-vision'
+          flow: flow
         )
       )
     end
