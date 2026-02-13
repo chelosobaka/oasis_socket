@@ -1,4 +1,5 @@
 require 'socket'
+require 'json'
 require_relative 'server_config_methods'
 
 class OasisTCPSocket
@@ -18,31 +19,49 @@ class OasisTCPSocket
   end
 
   def handle_client(client)
-    request = client.gets&.chomp
+    raw = client.gets
+    return if raw.nil?
 
-    case request
-    when 'file_exist?'
-      response = file_exist?.to_s
-    when /^add_client (.+)/
-      _, new_client = request.split(' ', 2)
-      response = add_client(JSON.parse(new_client)) ? 'true' : 'false'
-    when /^remove_client (.+)/
-      _, email = request.split(' ', 2)
-      response = remove_client(email) ? 'true' : 'false'
-    when /^find_client (.+)/
-      _, email = request.split(' ', 2)
-      response = find_client(email) ? 'true' : 'false'
-    when 'server_values'
-      response = server_values.to_json
-    when 'reload_config'
-      response = reload_config ? 'true' : 'false'
-    when 'file'
-      response = file.to_json
-    else
-      response = 'Invalid request'
-    end
+    data = JSON.parse(raw)
+    
+    p data
 
-    client.puts(response)
+    response =
+      case data['action']
+      when 'file_exist?'
+        file_exist?
+
+      when 'add_client'
+        add_client(data['client'], data['type'])
+
+      when 'remove_client'
+        remove_client(data['email'], data['type'])
+
+      when 'find_client'
+        find_client(data['email'], data['type'])
+
+      when 'server_values'
+        server_values(data['type'])
+
+      when 'reload_config'
+        reload_config
+
+      when 'file'
+        server_config
+
+      else
+        false
+      end
+
+      p response 
+    client.puts(response.to_json)
+  rescue JSON::ParserError
+    answer = { ok: false, error: 'Invalid_json' }
+    client.puts(answer.to_json)
+  rescue => e
+    answer = { ok: false, error: e.message }
+    client.puts(answer.to_json)
+  ensure
     client.close
   end
 end
