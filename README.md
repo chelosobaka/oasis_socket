@@ -9,8 +9,9 @@
 Команды: `file_exist?`, `add_client <json>`, `remove_client <email>`,
 `find_client <email>`, `server_values`, `reload_config`, `file`.
 
-- На сервере один тип ключей (Reality, gRPC или XHTTP) и **один inbound VLESS**: агент
-  находит его в `config.json` сам, номер и тег не зашиты.
+- На сервере один тип ключей (Reality, gRPC или XHTTP). В `config.json` фиксированный
+  порядок: `inbounds[0]` — системный (API Xray), `inbounds[1]` — клиентский (ключи). Агент
+  всегда работает с `inbounds[1]`, тег берёт из файла.
 - `flow` клиента приходит от Rails; у gRPC и XHTTP агент всегда ставит пустой `flow`
   (vision работает только по TCP).
 - Если команда не выполнилась, после ответа (`false` или `{}`) агент шлёт **второй строкой

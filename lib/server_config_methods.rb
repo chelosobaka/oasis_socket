@@ -5,15 +5,15 @@ require_relative 'xray_api'
 
 # Команды агента: config.json Xray и работающий Xray (через Xray::XrayAPI).
 #
-# Клиентский inbound — единственный inbound VLESS в config.json (решение владельца
-# 06.11.2026: на сервере один тип ключей и один inbound). Его номер и тег агент берёт из
-# файла, а не из кода, поэтому порядок inbound'ов и тег могут быть любыми. Inbound API
-# (dokodemo-door) не мешает: у него другой протокол.
+# Inbound'ы в config.json (решение владельца 06.11.2026): inbounds[0] — системный (API Xray),
+# агент его не трогает; ключи — в inbounds[1], это inbound VLESS. На сервере один тип ключей,
+# поэтому inbound для ключей один. Его тег агент берёт из файла: по тегу он обращается к API Xray.
 #
 # Команда, которая не выполнилась, бросает AgentError с причиной. OasisTCPSocket отвечает
 # на неё «false» (или «{}») и второй строкой — этой причиной.
 module ServerConfigMethods
   VISION = 'xtls-rprx-vision'.freeze
+  KEYS_INBOUND = 1
   # Чтение и запись config.json идут под одной блокировкой: соединения обслуживаются
   # параллельно, и без неё одновременные add_client/remove_client затирали изменения друг
   # друга (клиент оставался в Xray, но пропадал из файла).
@@ -128,16 +128,15 @@ module ServerConfigMethods
     File.delete(temp) if temp && File.exist?(temp)
   end
 
+  # Inbound для ключей — inbounds[1]. Каким бы ни был inbounds[0], агент его не берёт: он системный.
   def client_inbound(config)
-    vless = Array(config['inbounds']).select { |inbound| inbound['protocol'] == 'vless' }
-    raise AgentError, "в #{path} нет inbound VLESS" if vless.empty?
-    if vless.size > 1
-      tags = vless.map { |inbound| inbound['tag'] || 'без тега' }.join(', ')
-      raise AgentError, "в #{path} несколько inbound VLESS (#{tags}), а агент работает с одним"
-    end
+    name = "inbounds[#{KEYS_INBOUND}]"
+    inbound = Array(config['inbounds'])[KEYS_INBOUND]
+    raise AgentError, "в #{path} нет #{name} для ключей (inbounds[0] — системный)" unless inbound.is_a?(Hash)
 
-    inbound = vless.first
-    raise AgentError, "у inbound VLESS в #{path} нет тега (tag): без него Xray API его не найдёт" if inbound['tag'].to_s.empty?
+    protocol = inbound['protocol']
+    raise AgentError, "#{name} в #{path} — не VLESS (protocol: #{protocol || 'не указан'})" unless protocol == 'vless'
+    raise AgentError, "у #{name} в #{path} нет тега (tag): без него Xray API его не найдёт" if inbound['tag'].to_s.empty?
 
     inbound
   end

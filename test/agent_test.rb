@@ -44,19 +44,19 @@ class AgentTest < Minitest::Test
     FileUtils.rm_rf(@dir)
   end
 
-  def test_uses_the_only_vless_inbound_when_there_is_no_api_inbound
-    write_config(reality('vless-in'))
-
-    assert_equal ['true', nil], add('1-1', 'xtls-rprx-vision')
-    assert_equal [[:add, 'vless-in', '1-1', 'uuid-1-1', 'xtls-rprx-vision']], @xray.calls
-    assert_equal [{ 'id' => 'uuid-1-1', 'email' => '1-1', 'flow' => 'xtls-rprx-vision' }], clients
-  end
-
-  def test_skips_the_api_inbound_of_the_old_layout
+  def test_uses_inbounds_1_for_keys
     write_config(API, reality('inbound-443'))
 
     assert_equal ['true', nil], add('1-1', 'xtls-rprx-vision')
-    assert_equal 'inbound-443', only(@xray.calls)[1]
+    assert_equal [[:add, 'inbound-443', '1-1', 'uuid-1-1', 'xtls-rprx-vision']], @xray.calls
+    assert_equal [{ 'id' => 'uuid-1-1', 'email' => '1-1', 'flow' => 'xtls-rprx-vision' }], clients
+  end
+
+  def test_leaves_inbounds_0_alone_even_when_it_is_also_vless
+    write_config(reality('system-0'), grpc('keys-1'))
+
+    assert_equal ['true', nil], add('1-1', '')
+    assert_equal 'keys-1', only(@xray.calls)[1]
     assert_equal ['1-1'], clients.map { |client| client['email'] }
   end
 
@@ -72,42 +72,42 @@ class AgentTest < Minitest::Test
   end
 
   def test_reality_takes_the_flow_rails_sends
-    write_config(reality('vless-in'))
+    write_config(API, reality('vless-in'))
 
     add('1-1', '')
     assert_equal '', only(@xray.calls).last
   end
 
   def test_replaces_a_stale_file_entry_with_the_same_email
-    write_config(reality('vless-in', [{ 'id' => 'old', 'email' => '1-1', 'flow' => '' }]))
+    write_config(API, reality('vless-in', [{ 'id' => 'old', 'email' => '1-1', 'flow' => '' }]))
 
     add('1-1', 'xtls-rprx-vision')
     assert_equal [{ 'id' => 'uuid-1-1', 'email' => '1-1', 'flow' => 'xtls-rprx-vision' }], clients
   end
 
-  def test_refuses_without_a_vless_inbound
+  def test_refuses_when_there_is_no_inbounds_1
     write_config(API)
 
     answer, reason = add('1-1', '')
     assert_equal 'false', answer
-    assert_equal "в #{@path} нет inbound VLESS", reason
+    assert_equal "в #{@path} нет inbounds[1] для ключей (inbounds[0] — системный)", reason
     assert_empty @xray.calls
   end
 
-  def test_refuses_with_several_vless_inbounds_and_names_them
-    write_config(reality('a'), grpc('b'))
+  def test_refuses_when_inbounds_1_is_not_vless
+    write_config(API, API)
 
-    assert_equal ['false', "в #{@path} несколько inbound VLESS (a, b), а агент работает с одним"], add('1-1', '')
+    assert_equal ['false', "inbounds[1] в #{@path} — не VLESS (protocol: dokodemo-door)"], add('1-1', '')
   end
 
   def test_refuses_an_inbound_without_a_tag
-    write_config(reality(nil))
+    write_config(API, reality(nil))
 
     assert_match(/нет тега/, add('1-1', '').last)
   end
 
   def test_passes_the_xray_refusal_and_keeps_the_file
-    write_config(reality('vless-in'))
+    write_config(API, reality('vless-in'))
     @agent = agent_with(FakeXrayAPI.new('Xray API 127.0.0.1:10085 (inbound vless-in): User 1-1 already exists.'))
 
     assert_equal ['false', 'Xray API 127.0.0.1:10085 (inbound vless-in): User 1-1 already exists.'], add('1-1', '')
@@ -115,7 +115,7 @@ class AgentTest < Minitest::Test
   end
 
   def test_takes_the_client_back_from_xray_when_the_file_is_not_written
-    write_config(reality('vless-in'))
+    write_config(API, reality('vless-in'))
     @agent.define_singleton_method(:write_config) { |_config| raise Errno::ENOSPC }
 
     answer, reason = add('1-1', 'xtls-rprx-vision')
@@ -125,7 +125,7 @@ class AgentTest < Minitest::Test
   end
 
   def test_keeps_the_old_file_when_writing_fails
-    write_config(reality('vless-in'))
+    write_config(API, reality('vless-in'))
     before = File.read(@path)
     File.singleton_class.alias_method(:original_rename, :rename)
     File.define_singleton_method(:rename) { |*| raise Errno::EACCES }
@@ -138,7 +138,7 @@ class AgentTest < Minitest::Test
   end
 
   def test_refuses_a_client_that_is_not_json
-    write_config(reality('vless-in'))
+    write_config(API, reality('vless-in'))
 
     answer, reason = @agent.respond_to_request('add_client {oops')
     assert_equal 'false', answer
@@ -154,7 +154,7 @@ class AgentTest < Minitest::Test
   end
 
   def test_finds_a_client_in_the_file
-    write_config(reality('vless-in', [{ 'id' => 'u', 'email' => '1-1', 'flow' => '' }]))
+    write_config(API, reality('vless-in', [{ 'id' => 'u', 'email' => '1-1', 'flow' => '' }]))
 
     assert_equal ['true', nil], @agent.respond_to_request('find_client 1-1')
     assert_equal ['false', nil], @agent.respond_to_request('find_client 1-2')
@@ -162,7 +162,7 @@ class AgentTest < Minitest::Test
 
   def test_file_exist_names_the_missing_file
     assert_equal ['false', "нет файла #{@path}"], @agent.respond_to_request('file_exist?')
-    write_config(reality('vless-in'))
+    write_config(API, reality('vless-in'))
     assert_equal ['true', nil], @agent.respond_to_request('file_exist?')
   end
 
@@ -177,12 +177,12 @@ class AgentTest < Minitest::Test
   end
 
   def test_server_values_of_grpc_and_xhttp_servers
-    write_config(grpc('grpc-in'))
+    write_config(API, grpc('grpc-in'))
     grpc_values = JSON.parse(@agent.respond_to_request('server_values').first)
     assert_equal %w[grpc grpc reality ab12 PUBLIC], grpc_values.values_at('config_type', 'service_name', 'security', 'sid', 'pbk')
     assert_equal '', grpc_values['flow']
 
-    write_config(xhttp('xhttp-in'))
+    write_config(API, xhttp('xhttp-in'))
     xhttp_values = JSON.parse(@agent.respond_to_request('server_values').first)
     assert_equal ['xhttp', 'vpn.example.com', 8443, '/api/v3/download', 'stream-up', ''],
                  xhttp_values.values_at('config_type', 'sni', 'port', 'path', 'mode', 'flow')
@@ -223,7 +223,7 @@ class AgentTest < Minitest::Test
     port = server.instance_variable_get(:@server).addr[1]
     thread = Thread.new { server.start }
 
-    assert_equal ['false', "в #{@path} нет inbound VLESS"], ask(port, 'add_client {"id":"u","email":"1-1","flow":""}')
+    assert_equal ['false', "в #{@path} нет inbounds[1] для ключей (inbounds[0] — системный)"], ask(port, 'add_client {"id":"u","email":"1-1","flow":""}')
     write_config(API, reality('inbound-443'))
     assert_equal ['true'], ask(port, 'add_client {"id":"u","email":"1-1","flow":""}')
     assert_equal 'reality', JSON.parse(only(ask(port, 'server_values')))['config_type']
@@ -254,7 +254,7 @@ class AgentTest < Minitest::Test
   end
 
   def clients
-    JSON.parse(File.read(@path))['inbounds'].find { |inbound| inbound['protocol'] == 'vless' }['settings']['clients']
+    JSON.parse(File.read(@path))['inbounds'][1]['settings']['clients']
   end
 
   def write_config(*inbounds)
