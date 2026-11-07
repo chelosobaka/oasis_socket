@@ -172,20 +172,20 @@ class AgentTest < Minitest::Test
     values = JSON.parse(@agent.respond_to_request('server_values').first)
     assert_equal({ 'port' => 443, 'security' => 'reality', 'sni' => 'www.example.com', 'fp' => 'chrome',
                    'pbk' => 'PUBLIC', 'sid' => 'ab12', 'network_type' => 'tcp', 'flow' => 'xtls-rprx-vision',
-                   'config_type' => 'reality', 'tag' => 'inbound-443', 'service_name' => nil, 'path' => nil,
-                   'mode' => nil }, values)
+                   'config_type' => 'reality', 'tag' => 'inbound-443', 'service_name' => nil, 'alpn' => nil,
+                   'path' => nil, 'mode' => nil }, values)
   end
 
   def test_server_values_of_grpc_and_xhttp_servers
     write_config(API, grpc('grpc-in'))
     grpc_values = JSON.parse(@agent.respond_to_request('server_values').first)
     assert_equal %w[grpc grpc reality ab12 PUBLIC], grpc_values.values_at('config_type', 'service_name', 'security', 'sid', 'pbk')
-    assert_equal '', grpc_values['flow']
+    assert_equal ['gun', ''], grpc_values.values_at('mode', 'flow')
 
     write_config(API, xhttp('xhttp-in'))
     xhttp_values = JSON.parse(@agent.respond_to_request('server_values').first)
-    assert_equal ['xhttp', 'vpn.example.com', 8443, '/api/v3/download', 'stream-up', ''],
-                 xhttp_values.values_at('config_type', 'sni', 'port', 'path', 'mode', 'flow')
+    assert_equal ['xhttp', 'vpn.example.com', 8443, '/api/v3/download', 'stream-up', ['h2', 'http/1.1'], ''],
+                 xhttp_values.values_at('config_type', 'sni', 'port', 'path', 'mode', 'alpn', 'flow')
   end
 
   def test_server_values_answer_an_empty_object_and_the_reason
@@ -272,7 +272,7 @@ class AgentTest < Minitest::Test
 
   def xhttp(tag, clients = [])
     vless(tag, clients, 8443, 'network' => 'xhttp', 'security' => 'tls',
-                              'tlsSettings' => { 'serverName' => 'vpn.example.com' },
+                              'tlsSettings' => { 'serverName' => 'vpn.example.com', 'alpn' => ['h2', 'http/1.1'] },
                               'xhttpSettings' => { 'path' => '/api/v3/download', 'mode' => 'stream-up' })
   end
 

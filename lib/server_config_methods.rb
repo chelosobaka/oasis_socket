@@ -80,8 +80,8 @@ module ServerConfigMethods
       pbk: reality.dig('settings', 'publicKey'), sid: reality['shortIds']&.first,
       network_type: stream['network'], flow: vision?(inbound) ? VISION : '',
       config_type: config_type(inbound), tag: inbound['tag'],
-      service_name: stream.dig('grpcSettings', 'serviceName'),
-      path: stream.dig('xhttpSettings', 'path'), mode: stream.dig('xhttpSettings', 'mode')
+      service_name: stream.dig('grpcSettings', 'serviceName'), alpn: stream.dig('tlsSettings', 'alpn'),
+      path: stream.dig('xhttpSettings', 'path'), mode: link_mode(stream)
     }
   end
 
@@ -161,6 +161,15 @@ module ServerConfigMethods
       warn "add_client: не удалось убрать #{client['email']} из Xray после сбоя записи: #{rollback_error.message}"
     end
     raise AgentError, "не удалось записать #{path}: #{e.message}"
+  end
+
+  # Значение параметра mode в ссылке vless://: у gRPC — gun/multi (grpcSettings.multiMode),
+  # у XHTTP — xhttpSettings.mode (auto / stream-up / packet-up), иначе nil.
+  def link_mode(stream)
+    case stream['network']
+    when 'grpc' then stream.dig('grpcSettings', 'multiMode') ? 'multi' : 'gun'
+    when 'xhttp' then stream.dig('xhttpSettings', 'mode')
+    end
   end
 
   # Vision работает только поверх TCP (raw) с REALITY или TLS. С gRPC и XHTTP Xray не пускает
