@@ -173,7 +173,7 @@ class AgentTest < Minitest::Test
     assert_equal({ 'port' => 443, 'security' => 'reality', 'sni' => 'www.example.com', 'fp' => 'chrome',
                    'pbk' => 'PUBLIC', 'sid' => 'ab12', 'network_type' => 'tcp', 'flow' => 'xtls-rprx-vision',
                    'config_type' => 'reality', 'tag' => 'inbound-443', 'service_name' => nil, 'alpn' => nil,
-                   'path' => nil, 'mode' => nil }, values)
+                   'path' => nil, 'mode' => nil, 'host' => nil }, values)
   end
 
   def test_server_values_of_grpc_and_xhttp_servers
@@ -186,6 +186,7 @@ class AgentTest < Minitest::Test
     xhttp_values = JSON.parse(@agent.respond_to_request('server_values').first)
     assert_equal ['xhttp', 'vpn.example.com', 8443, '/api/v3/download', 'stream-up', ['h2', 'http/1.1'], ''],
                  xhttp_values.values_at('config_type', 'sni', 'port', 'path', 'mode', 'alpn', 'flow')
+    assert_equal 'cdn.example.com', xhttp_values['host']
   end
 
   def test_server_values_answer_an_empty_object_and_the_reason
@@ -273,7 +274,7 @@ class AgentTest < Minitest::Test
   def xhttp(tag, clients = [])
     vless(tag, clients, 8443, 'network' => 'xhttp', 'security' => 'tls',
                               'tlsSettings' => { 'serverName' => 'vpn.example.com', 'alpn' => ['h2', 'http/1.1'] },
-                              'xhttpSettings' => { 'path' => '/api/v3/download', 'mode' => 'stream-up' })
+                              'xhttpSettings' => { 'path' => '/api/v3/download', 'mode' => 'stream-up', 'host' => 'cdn.example.com' })
   end
 
   def vless(tag, clients, port, stream)

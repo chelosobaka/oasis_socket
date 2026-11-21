@@ -81,7 +81,8 @@ module ServerConfigMethods
       network_type: stream['network'], flow: vision?(inbound) ? VISION : '',
       config_type: config_type(inbound), tag: inbound['tag'],
       service_name: stream.dig('grpcSettings', 'serviceName'), alpn: stream.dig('tlsSettings', 'alpn'),
-      path: stream.dig('xhttpSettings', 'path'), mode: link_mode(stream)
+      path: stream.dig('xhttpSettings', 'path'), mode: link_mode(stream),
+      host: stream.dig('xhttpSettings', 'host')
     }
   end
 
